@@ -8,19 +8,19 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # ⚡ OPTIMIZATION 1: Timeout set kiya
+    timeout-minutes: 5
 
     steps:
       - name: Repo checkout karo
         uses: actions/checkout@v4
         with:
-          clean: true   # ⚡ OPTIMIZATION 2: Har baar fresh file clean checkout karega
+          clean: true
 
       - name: Python setup karo
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip'  # ⚡ OPTIMIZATION 3: Dependencies cache karega
+          cache: 'pip'
 
       - name: Dependencies install karo
         run: |
