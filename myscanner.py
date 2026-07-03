@@ -1,10 +1,10 @@
 """
-TREND-PULLBACK Crypto Scanner (Bybit Spot)
+TREND-PULLBACK Crypto Scanner (MEXC Spot - Top 100 Coins)
 ==============================================
 Strategy: EMA50 > EMA200 trend + pullback to EMA50 + RSI 40-45 + green candle
           + rising volume.
 
-Note: Switched to Bybit to avoid location restrictions on GitHub Actions.
+Note: Automatically fetches Top 100 Volume USDT pairs from MEXC.
 """
 
 import os
@@ -22,16 +22,7 @@ import requests
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "PASTE_YOUR_CHAT_ID_HERE")
 
-SYMBOLS = [
-    "BTC/USDT",
-    "ETH/USDT",
-    "SOL/USDT",
-    "BNB/USDT",
-    "XRP/USDT",
-    "ADA/USDT",
-    "DOGE/USDT",
-]
-
+# Hum ne yahan se SYMBOLS list nikal di hai kyunke ab hum live Top 100 fetch karenge
 TIMEFRAMES = ["5m", "15m"]
 
 EMA_FAST = 50
@@ -53,6 +44,36 @@ CANDLE_LIMIT = 300
 # ======================================================================
 # ========================= HELPER FUNCTIONS ===========================
 # ======================================================================
+
+def get_top_100_symbols(exchange):
+    """MEXC se highest trading volume wale Top 100 USDT pairs nikalta hai"""
+    try:
+        print("Fetching Top 100 symbols by volume...")
+        tickers = exchange.fetch_tickers()
+        symbols_data = []
+        
+        for symbol, data in tickers.items():
+            # Sirf Spot USDT pairs lein, futures/perps (:) ko ignore karein
+            if symbol.endswith('/USDT') and ':' not in symbol:
+                volume = data.get('quoteVolume', 0)
+                if volume is not None and volume > 0:
+                    symbols_data.append((symbol, volume))
+                    
+        # Volume ke hisaab se descending order mein sort karein
+        symbols_data.sort(key=lambda x: x[1], reverse=True)
+        
+        # Pehle 100 symbols return karein
+        top_100 = [x[0] for x in symbols_data[:100]]
+        print(f"✅ Top 100 symbols loaded successfully!")
+        return top_100
+        
+    except Exception as e:
+        print(f"Error fetching top symbols: {e}")
+        # Agar koi API error aaye to fail-safe ke taur par in 10 coins ko scan karega
+        return [
+            "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
+            "ADA/USDT", "DOGE/USDT", "SHIB/USDT", "MATIC/USDT", "LINK/USDT"
+        ]
 
 def fetch_candles(exchange, symbol, timeframe):
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=CANDLE_LIMIT)
@@ -136,16 +157,15 @@ def send_telegram_alert(symbol, timeframe, signal):
     except Exception as e:
         print(f"Telegram Alert Error: {e}")
 
-# Yahan main ne changes kiye hain taake har haal mein report aaye
 def send_status_report(signals_found, error_msg=None):
     text = f"🤖 <b>Scanner Health Check</b> ({datetime.now(timezone.utc).strftime('%H:%M')} UTC)\n\n"
     
     if error_msg:
         text += f"⚠️ <b>SCANNER ERROR:</b>\n{error_msg}\n\nGitHub Actions check karein!"
     elif signals_found:
-        text += "✅ <b>Signals Found:</b>\n" + "\n".join(signals_found)
+        text += f"✅ <b>{len(signals_found)} Signals Found:</b>\n" + "\n".join(signals_found)
     else:
-        text += "❌ No signals found.\n(Scanner is active and running perfectly)"
+        text += "❌ No signals found in Top 100.\n(Scanner is active and running perfectly)"
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
@@ -165,15 +185,17 @@ def get_active_timeframes():
 # ======================================================================
 
 def run_scan():
-    # Poore function ko try-except mein daala hai taake script crash ho to message aaye
     try:
-        exchange = ccxt.bybit({"enableRateLimit": True})
+        exchange = ccxt.mexc({"enableRateLimit": True})
         print(f"DEBUG: Exchange initialized as {exchange.id}")
+        
+        # Yahan par Top 100 coins automatically nikal rahe hain
+        top_symbols = get_top_100_symbols(exchange)
         
         active_timeframes = [tf for tf in TIMEFRAMES if tf in get_active_timeframes()]
         signals_list = []
 
-        for symbol in SYMBOLS:
+        for symbol in top_symbols:
             for tf in active_timeframes:
                 try:
                     df = add_indicators(fetch_candles(exchange, symbol, tf))
@@ -182,15 +204,16 @@ def run_scan():
                         signals_list.append(f"✅ {symbol} ({tf}) - Entry: {signal['entry']:.6f}")
                         send_telegram_alert(symbol, tf, signal)
                 except Exception as e:
-                    print(f"Error {symbol} {tf}: {e}")
-                time.sleep(0.3)
+                    # Agar kisi 1 coin mein masla ho to usay chhor kar agay barh jaye
+                    pass 
+                
+                # Exchange limits se bachne ke liye thoda rukna zaroori hai (100 coins ke liye)
+                time.sleep(0.1) 
         
-        # Scan complete hone par success report
         send_status_report(signals_list)
 
     except Exception as main_e:
         print(f"CRITICAL ERROR: {main_e}")
-        # Agar script fail ho jaye to Telegram par Error report bheje ga
         send_status_report(None, error_msg=str(main_e))
 
 if __name__ == "__main__":
