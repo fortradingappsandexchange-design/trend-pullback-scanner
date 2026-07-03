@@ -1,15 +1,9 @@
-# Ye file GitHub repo me is exact path par jaani chahiye:
-#    .github/workflows/scanner.yml
-#
-# Isse GitHub Actions har 5 minute me automatically scanner.py chalayega.
-# Bilkul FREE hai (public/private repo dono me kaafi free minutes milte hain).
-
 name: Trend-Pullback Scanner
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # Har 5 minute me chalega (UTC time)
-  workflow_dispatch:         # Manually bhi "Run workflow" button se chala sakte ho
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 jobs:
   scan:
@@ -27,7 +21,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pandas-ta
 
       - name: Scanner chalao
         env:
