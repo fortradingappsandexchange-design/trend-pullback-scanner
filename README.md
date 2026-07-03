@@ -1,0 +1,1 @@
+# trend-pullback-scanner
