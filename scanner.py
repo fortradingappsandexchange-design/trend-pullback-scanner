@@ -1,15 +1,10 @@
 """
-TREND-PULLBACK Crypto Scanner (Binance Spot)
+TREND-PULLBACK Crypto Scanner (Bybit Spot)
 ==============================================
 Strategy: EMA50 > EMA200 trend + pullback to EMA50 + RSI 40-45 + green candle
           + rising volume.
 
-Ye script EK BAAR chalta hai (single pass) — saare coins/timeframes check
-karta hai, agar signal milta hai to Telegram par alert bhejta hai, phir
-band ho jaata hai. Isko har 5 minute pe cron/GitHub Actions se dobara
-chalaya jaata hai (24/7 automation ke liye).
-
-Author: Claude (Anthropic) for beginner-friendly automated trading scanner
+Note: Switched to Bybit to avoid location restrictions on GitHub Actions.
 """
 
 import os
@@ -160,6 +155,7 @@ def get_active_timeframes():
 # ======================================================================
 
 def run_scan():
+    # Bybit ka exchange object
     exchange = ccxt.bybit({"enableRateLimit": True})
     active_timeframes = [tf for tf in TIMEFRAMES if tf in get_active_timeframes()]
     signals_list = []
