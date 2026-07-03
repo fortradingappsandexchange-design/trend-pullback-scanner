@@ -160,7 +160,7 @@ def get_active_timeframes():
 # ======================================================================
 
 def run_scan():
-    exchange = ccxt.binance({"enableRateLimit": True})
+    exchange = ccxt.bybit({"enableRateLimit": True})
     active_timeframes = [tf for tf in TIMEFRAMES if tf in get_active_timeframes()]
     signals_list = []
 
