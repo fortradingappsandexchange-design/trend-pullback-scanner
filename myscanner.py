@@ -4,7 +4,7 @@ TREND-PULLBACK Crypto Scanner (MEXC Spot - Top 100 Coins)
 Strategy: EMA50 > EMA200 trend + pullback to EMA50 + RSI 40-45 + green candle
           + rising volume.
 
-Note: Automatically fetches Top 100 Volume USDT pairs from MEXC.
+Note: Automatically fetches Top 1000 Volume USDT pairs from MEXC.
 """
 
 import os
