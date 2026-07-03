@@ -131,17 +131,27 @@ def send_telegram_alert(symbol, timeframe, signal):
         f"TP1: {signal['tp1']:.6f}"
     )
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"})
+    try:
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"})
+    except Exception as e:
+        print(f"Telegram Alert Error: {e}")
 
-def send_status_report(signals_found):
-    text = f"🤖 <b>Scan Complete</b> ({datetime.now(timezone.utc).strftime('%H:%M')} UTC)\n\n"
-    if signals_found:
-        text += "\n".join(signals_found)
+# Yahan main ne changes kiye hain taake har haal mein report aaye
+def send_status_report(signals_found, error_msg=None):
+    text = f"🤖 <b>Scanner Health Check</b> ({datetime.now(timezone.utc).strftime('%H:%M')} UTC)\n\n"
+    
+    if error_msg:
+        text += f"⚠️ <b>SCANNER ERROR:</b>\n{error_msg}\n\nGitHub Actions check karein!"
+    elif signals_found:
+        text += "✅ <b>Signals Found:</b>\n" + "\n".join(signals_found)
     else:
-        text += "❌ No signals found this round."
+        text += "❌ No signals found.\n(Scanner is active and running perfectly)"
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"})
+    try:
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"})
+    except Exception as e:
+        print(f"Telegram Report Error: {e}")
 
 def get_active_timeframes():
     now = datetime.now(timezone.utc)
@@ -155,26 +165,33 @@ def get_active_timeframes():
 # ======================================================================
 
 def run_scan():
-    # Bybit ka exchange object (Binance hata diya gaya hai)
-    exchange = ccxt.bybit({"enableRateLimit": True})
-    print(f"DEBUG: Exchange initialized as {exchange.id}")
-    
-    active_timeframes = [tf for tf in TIMEFRAMES if tf in get_active_timeframes()]
-    signals_list = []
+    # Poore function ko try-except mein daala hai taake script crash ho to message aaye
+    try:
+        exchange = ccxt.bybit({"enableRateLimit": True})
+        print(f"DEBUG: Exchange initialized as {exchange.id}")
+        
+        active_timeframes = [tf for tf in TIMEFRAMES if tf in get_active_timeframes()]
+        signals_list = []
 
-    for symbol in SYMBOLS:
-        for tf in active_timeframes:
-            try:
-                df = add_indicators(fetch_candles(exchange, symbol, tf))
-                signal = check_signal(df)
-                if signal:
-                    signals_list.append(f"✅ {symbol} ({tf}) - Entry: {signal['entry']:.6f}")
-                    send_telegram_alert(symbol, tf, signal)
-            except Exception as e:
-                print(f"Error {symbol} {tf}: {e}")
-            time.sleep(0.3)
-    
-    send_status_report(signals_list)
+        for symbol in SYMBOLS:
+            for tf in active_timeframes:
+                try:
+                    df = add_indicators(fetch_candles(exchange, symbol, tf))
+                    signal = check_signal(df)
+                    if signal:
+                        signals_list.append(f"✅ {symbol} ({tf}) - Entry: {signal['entry']:.6f}")
+                        send_telegram_alert(symbol, tf, signal)
+                except Exception as e:
+                    print(f"Error {symbol} {tf}: {e}")
+                time.sleep(0.3)
+        
+        # Scan complete hone par success report
+        send_status_report(signals_list)
+
+    except Exception as main_e:
+        print(f"CRITICAL ERROR: {main_e}")
+        # Agar script fail ho jaye to Telegram par Error report bheje ga
+        send_status_report(None, error_msg=str(main_e))
 
 if __name__ == "__main__":
     run_scan()
