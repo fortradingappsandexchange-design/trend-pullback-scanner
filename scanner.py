@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 
 import ccxt
 import pandas as pd
-import pandas_ta as ta
 import requests
 
 # ======================================================================
@@ -84,11 +83,35 @@ def fetch_candles(exchange, symbol, timeframe):
     return df
 
 
+def calculate_ema(series, length):
+    """EMA (Exponential Moving Average) - pandas ke built-in ewm se."""
+    return series.ewm(span=length, adjust=False).mean()
+
+
+def calculate_rsi(series, length=14):
+    """
+    RSI (Relative Strength Index) - Wilder's smoothing method use karke,
+    jo standard TradingView/Binance RSI jaisa hi result deta hai.
+    """
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    # Jab avg_loss 0 ho (sirf upar hi gaya price), RSI = 100 hota hai
+    rsi = rsi.where(avg_loss != 0, 100)
+    return rsi
+
+
 def add_indicators(df):
     """EMA50, EMA200 aur RSI14 calculate karke DataFrame me add karta hai."""
-    df["ema50"] = ta.ema(df["close"], length=EMA_FAST)
-    df["ema200"] = ta.ema(df["close"], length=EMA_SLOW)
-    df["rsi"] = ta.rsi(df["close"], length=RSI_LEN)
+    df["ema50"] = calculate_ema(df["close"], EMA_FAST)
+    df["ema200"] = calculate_ema(df["close"], EMA_SLOW)
+    df["rsi"] = calculate_rsi(df["close"], RSI_LEN)
     return df
 
 
