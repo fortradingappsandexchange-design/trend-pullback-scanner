@@ -1,10 +1,10 @@
 """
-TREND-PULLBACK Crypto Scanner (MEXC Spot - Top 100 Coins)
+TREND-PULLBACK Crypto Scanner (MEXC Spot)
 ==============================================
 Strategy: EMA50 > EMA200 trend + pullback to EMA50 + RSI 40-45 + green candle
           + rising volume.
 
-Note: Automatically fetches Top 1000 Volume USDT pairs from MEXC.
+Note: Switched to MEXC exchange. Dynamic Top Volume Coins added.
 """
 
 import os
@@ -22,7 +22,9 @@ import requests
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "PASTE_YOUR_CHAT_ID_HERE")
 
-# Hum ne yahan se SYMBOLS list nikal di hai kyunke ab hum live Top 100 fetch karenge
+# ⚡ Nayi Setting: Kitne top coins scan karne hain? (GitHub ke liye 150 best hai, 1000 API limit hit karega)
+MAX_COINS = 150  
+
 TIMEFRAMES = ["5m", "15m"]
 
 EMA_FAST = 50
@@ -45,35 +47,25 @@ CANDLE_LIMIT = 300
 # ========================= HELPER FUNCTIONS ===========================
 # ======================================================================
 
-def get_top_100_symbols(exchange):
-    """MEXC se highest trading volume wale Top 100 USDT pairs nikalta hai"""
-    try:
-        print("Fetching Top 100 symbols by volume...")
-        tickers = exchange.fetch_tickers()
-        symbols_data = []
-        
-        for symbol, data in tickers.items():
-            # Sirf Spot USDT pairs lein, futures/perps (:) ko ignore karein
-            if symbol.endswith('/USDT') and ':' not in symbol:
-                volume = data.get('quoteVolume', 0)
-                if volume is not None and volume > 0:
-                    symbols_data.append((symbol, volume))
-                    
-        # Volume ke hisaab se descending order mein sort karein
-        symbols_data.sort(key=lambda x: x[1], reverse=True)
-        
-        # Pehle 100 symbols return karein
-        top_100 = [x[0] for x in symbols_data[:100]]
-        print(f"✅ Top 100 symbols loaded successfully!")
-        return top_100
-        
-    except Exception as e:
-        print(f"Error fetching top symbols: {e}")
-        # Agar koi API error aaye to fail-safe ke taur par in 10 coins ko scan karega
-        return [
-            "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT",
-            "ADA/USDT", "DOGE/USDT", "SHIB/USDT", "MATIC/USDT", "LINK/USDT"
-        ]
+def get_top_symbols(exchange, limit=MAX_COINS):
+    """MEXC se sab se zyada 24h volume walay USDT spot pairs fetch karega"""
+    print(f"Fetching Top {limit} symbols by 24h Volume...")
+    tickers = exchange.fetch_tickers()
+    usdt_pairs = []
+    
+    for symbol, ticker in tickers.items():
+        # Sirf Spot USDT pairs lein, margin/futures nahi
+        if symbol.endswith('/USDT') and ':' not in symbol:
+            vol = ticker.get('quoteVolume', 0)
+            if vol is not None and vol > 0:
+                usdt_pairs.append({'symbol': symbol, 'volume': vol})
+                
+    # Volume ke hisaab se descending order mein sort karein
+    usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
+    
+    # Top N coins filter karein
+    top_symbols = [pair['symbol'] for pair in usdt_pairs[:limit]]
+    return top_symbols
 
 def fetch_candles(exchange, symbol, timeframe):
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=CANDLE_LIMIT)
@@ -157,15 +149,16 @@ def send_telegram_alert(symbol, timeframe, signal):
     except Exception as e:
         print(f"Telegram Alert Error: {e}")
 
-def send_status_report(signals_found, error_msg=None):
-    text = f"🤖 <b>Scanner Health Check</b> ({datetime.now(timezone.utc).strftime('%H:%M')} UTC)\n\n"
+def send_status_report(signals_found, error_msg=None, coins_scanned=0):
+    text = f"🤖 <b>Scanner Health Check</b> ({datetime.now(timezone.utc).strftime('%H:%M')} UTC)\n"
+    text += f"🔍 Scanned: Top {coins_scanned} Coins\n\n"
     
     if error_msg:
         text += f"⚠️ <b>SCANNER ERROR:</b>\n{error_msg}\n\nGitHub Actions check karein!"
     elif signals_found:
-        text += f"✅ <b>{len(signals_found)} Signals Found:</b>\n" + "\n".join(signals_found)
+        text += "✅ <b>Signals Found:</b>\n" + "\n".join(signals_found)
     else:
-        text += "❌ No signals found in Top 100.\n(Scanner is active and running perfectly)"
+        text += "❌ No signals found.\n(Scanner is active and running perfectly)"
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
@@ -189,13 +182,12 @@ def run_scan():
         exchange = ccxt.mexc({"enableRateLimit": True})
         print(f"DEBUG: Exchange initialized as {exchange.id}")
         
-        # Yahan par Top 100 coins automatically nikal rahe hain
-        top_symbols = get_top_100_symbols(exchange)
-        
+        # Dynamically fetch top symbols instead of hardcoded list
+        symbols_to_scan = get_top_symbols(exchange, limit=MAX_COINS)
         active_timeframes = [tf for tf in TIMEFRAMES if tf in get_active_timeframes()]
         signals_list = []
 
-        for symbol in top_symbols:
+        for symbol in symbols_to_scan:
             for tf in active_timeframes:
                 try:
                     df = add_indicators(fetch_candles(exchange, symbol, tf))
@@ -204,17 +196,17 @@ def run_scan():
                         signals_list.append(f"✅ {symbol} ({tf}) - Entry: {signal['entry']:.6f}")
                         send_telegram_alert(symbol, tf, signal)
                 except Exception as e:
-                    # Agar kisi 1 coin mein masla ho to usay chhor kar agay barh jaye
-                    pass 
+                    # Choti errors ko ignore karega taake baki coins scan hote rahein
+                    pass
                 
-                # Exchange limits se bachne ke liye thoda rukna zaroori hai (100 coins ke liye)
+                # API Limit bachane ke liye chhota sa pause
                 time.sleep(0.1) 
         
-        send_status_report(signals_list)
+        send_status_report(signals_list, coins_scanned=len(symbols_to_scan))
 
     except Exception as main_e:
         print(f"CRITICAL ERROR: {main_e}")
-        send_status_report(None, error_msg=str(main_e))
+        send_status_report(None, error_msg=str(main_e), coins_scanned=0)
 
 if __name__ == "__main__":
     run_scan()
