@@ -2,7 +2,7 @@ name: Trend-Pullback Scanner
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # <-- Yeh ab har 15 minute baad script ko chalayega
+    - cron: "*/15 * * * *"   # Har 15 minute baad chalega
   workflow_dispatch:
 
 jobs:
@@ -29,6 +29,6 @@ jobs:
 
       - name: Scanner chalao
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}   # <-- Aapka secret name yahan map ho gaya
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python myscanner.py
