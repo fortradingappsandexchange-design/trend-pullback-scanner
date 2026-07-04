@@ -1,14 +1,14 @@
-name: Trend-Pullback Scanner
+name: Trend-Pullback Scanner (24/7 Accurate Version)
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # Har 15 minute baad chalega
-  workflow_dispatch:
+    - cron: "0 */6 * * * "   # Har 6 ghante baad naya runner start hoga
+  workflow_dispatch:        # Aap manually bhi kisi bhi waqt start kar sakte hain
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 14
+    timeout-minutes: 350    # 5.8 ghante tak computer active rahega
 
     steps:
       - name: Repo checkout karo
@@ -29,6 +29,6 @@ jobs:
 
       - name: Scanner chalao
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}   # <-- Aapka secret name yahan map ho gaya
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python myscanner.py
