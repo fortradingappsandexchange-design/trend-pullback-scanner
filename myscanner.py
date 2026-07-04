@@ -1,11 +1,11 @@
 """
-TREND-PULLBACK Crypto Scanner (MEXC Spot - Telegram 15m Force Version)
+TREND-PULLBACK Crypto Scanner (MEXC Spot - 24/7 Continuous Loop Version)
 ==============================================
 """
 
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import ccxt
 import pandas as pd
 import requests
@@ -35,6 +35,9 @@ TP1_PCT = 0.015
 TP2_PCT = 0.02
 
 CANDLE_LIMIT = 300
+
+# RUN_DURATION: 5 Ghante 45 Minute (Takriban 20700 seconds) baad script exit karegi
+RUN_DURATION = 20700 
 
 # ======================================================================
 # ========================= HELPER FUNCTIONS ===========================
@@ -156,37 +159,55 @@ def send_status_report(signals_found, error_msg=None, coins_scanned=0):
     
     send_telegram_message(text)
 
-def get_active_timeframes():
-    return ["15m"]
+def wait_until_next_15m_candle():
+    """Agli 15-minute ki candle close (00, 15, 30, 45) hone tak precise wait karta hai"""
+    now = datetime.now(timezone.utc)
+    minutes_to_add = 15 - (now.minute % 15)
+    target_time = now.replace(second=0, microsecond=0) + timedelta(minutes=minutes_to_add)
+    
+    wait_seconds = (target_time - datetime.now(timezone.utc)).total_seconds()
+    if wait_seconds > 0:
+        print(f"Waiting {wait_seconds:.2f} seconds until next candle close ({target_time.strftime('%H:%M')} UTC)...")
+        time.sleep(wait_seconds)
 
 # ======================================================================
 # ============================ MAIN RUN ================================
 # ======================================================================
 
 def run_scan():
-    try:
-        exchange = ccxt.mexc({"enableRateLimit": True})
-        symbols_to_scan = get_top_symbols(exchange, limit=MAX_COINS)
-        active_timeframes = get_active_timeframes()
-        signals_list = []
+    script_start_time = time.time()
+    exchange = ccxt.mexc({"enableRateLimit": True})
+    
+    print("Scanner Loop Started successfully!")
+    
+    while time.time() - script_start_time < RUN_DURATION:
+        # Agli candle close hone ka wait karo
+        wait_until_next_15m_candle()
+        
+        print(f"Starting Scan at {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC...")
+        try:
+            symbols_to_scan = get_top_symbols(exchange, limit=MAX_COINS)
+            signals_list = []
 
-        for symbol in symbols_to_scan:
-            for tf in active_timeframes:
+            for symbol in symbols_to_scan:
                 try:
-                    df = add_indicators(fetch_candles(exchange, symbol, tf))
+                    df = add_indicators(fetch_candles(exchange, symbol, "15m"))
                     signal = check_signal(df)
                     if signal:
-                        signals_list.append(f"✅ {symbol} ({tf}) - Entry: {signal['entry']:.6f}")
-                        send_telegram_alert(symbol, tf, signal)
+                        signals_list.append(f"✅ {symbol} (15m) - Entry: {signal['entry']:.6f}")
+                        send_telegram_alert(symbol, "15m", signal)
                 except Exception:
                     pass
-                time.sleep(0.1) 
-        
-        send_status_report(signals_list, coins_scanned=len(symbols_to_scan))
+                time.sleep(0.1) # Rate limit se bachne ke liye chota pause
+            
+            send_status_report(signals_list, coins_scanned=len(symbols_to_scan))
 
-    except Exception as main_e:
-        print(f"CRITICAL ERROR: {main_e}")
-        send_status_report(None, error_msg=str(main_e), coins_scanned=0)
+        except Exception as main_e:
+            print(f"CRITICAL ERROR in loop: {main_e}")
+            send_status_report(None, error_msg=str(main_e), coins_scanned=0)
+            time.sleep(30) # Error ki surat mein thoda ruk jao
+
+    print("5.75 Hours complete. Exiting cleanly to allow the next GitHub workflow to take over.")
 
 if __name__ == "__main__":
     run_scan()
