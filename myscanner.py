@@ -17,7 +17,7 @@ import requests
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-MAX_COINS = 150
+MAX_COINS = 1000
 TIMEFRAMES = ["15m"]
 
 EMA_FAST = 50
