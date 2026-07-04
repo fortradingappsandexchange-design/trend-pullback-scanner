@@ -2,13 +2,13 @@ name: Trend-Pullback Scanner
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"   # <-- Yeh ab har 15 minute baad script ko chalayega
   workflow_dispatch:
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Repo checkout karo
