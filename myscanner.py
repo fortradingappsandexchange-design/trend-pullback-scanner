@@ -1,16 +1,11 @@
 """
-TREND-PULLBACK Crypto Scanner (MEXC Spot)
+TREND-PULLBACK Crypto Scanner (MEXC Spot - Telegram 15m Force Version)
 ==============================================
-Strategy: EMA50 > EMA200 trend + pullback to EMA50 + RSI 40-45 + green candle
-          + rising volume.
-
-Note: Switched to MEXC exchange. Dynamic Top Volume Coins added.
 """
 
 import os
 import time
 from datetime import datetime, timezone
-
 import ccxt
 import pandas as pd
 import requests
@@ -19,13 +14,11 @@ import requests
 # ============================ CONFIG =================================
 # ======================================================================
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "PASTE_YOUR_CHAT_ID_HERE")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# ⚡ Nayi Setting: Kitne top coins scan karne hain? (GitHub ke liye 150 best hai, 1000 API limit hit karega)
 MAX_COINS = 150  
-
-TIMEFRAMES = ["5m", "15m"]
+TIMEFRAMES = ["15m"]  # <-- Sirf 15m kar diya
 
 EMA_FAST = 50
 EMA_SLOW = 200
@@ -48,30 +41,24 @@ CANDLE_LIMIT = 300
 # ======================================================================
 
 def get_top_symbols(exchange, limit=MAX_COINS):
-    """MEXC se sab se zyada 24h volume walay USDT spot pairs fetch karega"""
     print(f"Fetching Top {limit} symbols by 24h Volume...")
-    tickers = exchange.fetch_tickers()
-    usdt_pairs = []
-    
-    for symbol, ticker in tickers.items():
-        # Sirf Spot USDT pairs lein, margin/futures nahi
-        if symbol.endswith('/USDT') and ':' not in symbol:
-            vol = ticker.get('quoteVolume', 0)
-            if vol is not None and vol > 0:
-                usdt_pairs.append({'symbol': symbol, 'volume': vol})
-                
-    # Volume ke hisaab se descending order mein sort karein
-    usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
-    
-    # Top N coins filter karein
-    top_symbols = [pair['symbol'] for pair in usdt_pairs[:limit]]
-    return top_symbols
+    try:
+        tickers = exchange.fetch_tickers()
+        usdt_pairs = []
+        for symbol, ticker in tickers.items():
+            if symbol.endswith('/USDT') and ':' not in symbol:
+                vol = ticker.get('quoteVolume', 0)
+                if vol is not None and vol > 0:
+                    usdt_pairs.append({'symbol': symbol, 'volume': vol})
+        usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
+        return [pair['symbol'] for pair in usdt_pairs[:limit]]
+    except Exception as e:
+        print(f"Error fetching tickers: {e}")
+        return ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"]
 
 def fetch_candles(exchange, symbol, timeframe):
     ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=CANDLE_LIMIT)
-    df = pd.DataFrame(
-        ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
-    )
+    df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df = df.iloc[:-1].reset_index(drop=True)
     return df
@@ -87,8 +74,7 @@ def calculate_rsi(series, length=14):
     avg_loss = loss.ewm(alpha=1 / length, min_periods=length, adjust=False).mean()
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    rsi = rsi.where(avg_loss != 0, 100)
-    return rsi
+    return rsi.where(avg_loss != 0, 100)
 
 def add_indicators(df):
     df["ema50"] = calculate_ema(df["close"], EMA_FAST)
@@ -103,75 +89,75 @@ def check_signal(df):
     prev = df.iloc[-2]
     if pd.isna(last["ema200"]) or pd.isna(last["ema50"]) or pd.isna(last["rsi"]):
         return None
+    
     trend_ok = (last["close"] > last["ema200"]) and (last["ema50"] > last["ema200"])
     if not trend_ok:
         return None
+        
     upper_bound = last["ema50"] * (1 + PULLBACK_TOLERANCE_UP)
     lower_bound = last["ema50"] * (1 - PULLBACK_TOLERANCE_DOWN)
     pullback_ok = lower_bound <= last["low"] <= upper_bound
     if not pullback_ok:
         return None
+        
     rsi_ok = RSI_MIN <= last["rsi"] <= RSI_MAX
     if not rsi_ok:
         return None
+        
     bullish_ok = last["close"] > last["open"]
     if not bullish_ok:
         return None
+        
     volume_ok = last["volume"] > prev["volume"]
     if not volume_ok:
         return None
-    prev_was_red = prev["close"] < prev["open"]
+        
     swing_window = df.iloc[-(SWING_LOOKBACK + 1):-1]
     swing_low = swing_window["low"].min()
+    
     return {
         "entry": float(last["close"]),
         "sl": float(swing_low * (1 - SL_BUFFER)),
         "tp1": float(last["close"] * (1 + TP1_PCT)),
-        "tp2": float(last["close"] * (1 + TP2_PCT)),
-        "rsi": float(last["rsi"]),
-        "ema50": float(last["ema50"]),
-        "ema200": float(last["ema200"]),
-        "candle_time": last["timestamp"],
-        "prev_was_red": bool(prev_was_red),
+        "tp2": float(last["close"] * (1 + TP2_PCT))
     }
+
+def send_telegram_message(text):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Telegram error: {e}")
 
 def send_telegram_alert(symbol, timeframe, signal):
     message = (
-        f"🚨 <b>SIGNAL: {symbol}</b> 🚨\n"
+        f"🚨 *SIGNAL: {symbol}* 🚨\n"
         f"Timeframe: {timeframe}\n"
         f"Entry: {signal['entry']:.6f}\n"
         f"Stop Loss: {signal['sl']:.6f}\n"
         f"TP1: {signal['tp1']:.6f}"
     )
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    try:
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"})
-    except Exception as e:
-        print(f"Telegram Alert Error: {e}")
+    send_telegram_message(message)
 
 def send_status_report(signals_found, error_msg=None, coins_scanned=0):
-    text = f"🤖 <b>Scanner Health Check</b> ({datetime.now(timezone.utc).strftime('%H:%M')} UTC)\n"
+    text = f"🤖 *15m Scanner Health Check* ({datetime.now(timezone.utc).strftime('%H:%M')} UTC)\n"
     text += f"🔍 Scanned: Top {coins_scanned} Coins\n\n"
     
     if error_msg:
-        text += f"⚠️ <b>SCANNER ERROR:</b>\n{error_msg}\n\nGitHub Actions check karein!"
+        text += f"⚠️ *SCANNER ERROR:*\n{error_msg}\n\nGitHub Actions check karein!"
     elif signals_found:
-        text += "✅ <b>Signals Found:</b>\n" + "\n".join(signals_found)
+        text += "✅ *Signals Found:*\n" + "\n".join(signals_found)
     else:
-        text += "❌ No signals found.\n(Scanner is active and running perfectly)"
+        text += "❌ No signals found in this 15m window.\n(Scanner active)"
     
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    try:
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"})
-    except Exception as e:
-        print(f"Telegram Report Error: {e}")
+    send_telegram_message(text)
 
 def get_active_timeframes():
-    now = datetime.now(timezone.utc)
-    active = ["5m"]
-    if now.minute % 15 == 0:
-        active.append("15m")
-    return active
+    # Ab hamesha chalega kyunke workflow hi har 15 minute baad trigger hoga
+    return ["15m"]
 
 # ======================================================================
 # ============================ MAIN RUN ================================
@@ -180,11 +166,8 @@ def get_active_timeframes():
 def run_scan():
     try:
         exchange = ccxt.mexc({"enableRateLimit": True})
-        print(f"DEBUG: Exchange initialized as {exchange.id}")
-        
-        # Dynamically fetch top symbols instead of hardcoded list
         symbols_to_scan = get_top_symbols(exchange, limit=MAX_COINS)
-        active_timeframes = [tf for tf in TIMEFRAMES if tf in get_active_timeframes()]
+        active_timeframes = get_active_timeframes()
         signals_list = []
 
         for symbol in symbols_to_scan:
@@ -195,13 +178,11 @@ def run_scan():
                     if signal:
                         signals_list.append(f"✅ {symbol} ({tf}) - Entry: {signal['entry']:.6f}")
                         send_telegram_alert(symbol, tf, signal)
-                except Exception as e:
-                    # Choti errors ko ignore karega taake baki coins scan hote rahein
+                except Exception:
                     pass
-                
-                # API Limit bachane ke liye chhota sa pause
                 time.sleep(0.1) 
         
+        # Yeh har haal mein status report bhejega, chahe signals_list khali ho
         send_status_report(signals_list, coins_scanned=len(symbols_to_scan))
 
     except Exception as main_e:
