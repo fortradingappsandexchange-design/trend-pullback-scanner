@@ -17,8 +17,8 @@ import requests
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-MAX_COINS = 150  
-TIMEFRAMES = ["15m"]  # <-- Sirf 15m kar diya
+MAX_COINS = 150
+TIMEFRAMES = ["15m"]
 
 EMA_FAST = 50
 EMA_SLOW = 200
@@ -124,6 +124,7 @@ def check_signal(df):
 
 def send_telegram_message(text):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram configuration missing!")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
@@ -156,7 +157,6 @@ def send_status_report(signals_found, error_msg=None, coins_scanned=0):
     send_telegram_message(text)
 
 def get_active_timeframes():
-    # Ab hamesha chalega kyunke workflow hi har 15 minute baad trigger hoga
     return ["15m"]
 
 # ======================================================================
@@ -182,7 +182,6 @@ def run_scan():
                     pass
                 time.sleep(0.1) 
         
-        # Yeh har haal mein status report bhejega, chahe signals_list khali ho
         send_status_report(signals_list, coins_scanned=len(symbols_to_scan))
 
     except Exception as main_e:
